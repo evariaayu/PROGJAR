@@ -1,0 +1,114 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <netdb.h>
+#include <fcntl.h>
+
+#define PAGE "/"
+
+int main(int argc, char **argv)
+{
+	int sockcli, flag=0, fd=0;
+	int iplen = 15; //XXX.XXX.XXX.XXX
+	struct sockaddr_in servaddr;
+	struct hostent *hent;
+	char *host, *page, buf[2];
+	FILE *fp;
+
+	if(argc == 1)
+	{
+    	printf("Pengunaan: http_d host [file]\nhost: nama host website. contoh: its.ac.id\nfile: file yang ingin diunduh. contoh: index.html, default: /\n");
+    	exit(2);
+  	}  
+  	host = argv[1];
+  	if(argc > 2) page = argv[2];
+  	else page = PAGE;
+	
+	sockcli = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	
+ 	char *ip = (char *)malloc(iplen+1);
+ 	bzero(ip, sizeof(iplen+1));
+	if((hent = gethostbyname(host)) == NULL)
+	{
+		herror("Can't get IP");
+		exit(1);
+ 	}
+  	if(inet_ntop(AF_INET, (void *)hent->h_addr_list[0], ip, iplen) == NULL)
+  	{
+    	perror("Can't resolve host");
+    	exit(1);
+  	}
+  	//printf("IP is %s\n", ip);
+
+	bzero(&servaddr, sizeof(servaddr)); //sama kyk memset(a,0,sizeof(a));
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_port = htons(80);
+	inet_aton(ip, &servaddr.sin_addr);
+
+	int retval = connect(sockcli, (struct sockaddr *)&servaddr, sizeof(servaddr));
+
+	char msg1[255];
+	char *msg = "GET ";
+	strcpy(msg1,msg);
+	strcat(msg1,page);
+	strcat(msg1," HTTP1.0\r\n:Host: ");
+	strcat(msg1,host);
+	strcat(msg1,"\r\n\r\n");
+
+	if(page == PAGE) 
+	{
+		fd=open("progjar.html", O_RDWR | O_CREAT, 0666);
+		//fp = fopen("progjar.html","a");
+	}
+  	else
+  	{
+    	int count=0, i=0;
+    	int pagelen=strlen(page);
+    	//printf("pagelen: %d\n", pagelen);
+    	for(i=pagelen-1;i>0;i--)
+    	{
+      		if(page[i]=='/') break;
+      		else count++;
+    	}
+    	char filename[100]; i=0;
+    	int j=pagelen-count;
+    	for(i=0;i<count;i++)
+    	{
+      		filename[i]=page[j];
+      		j++;
+    	}
+    	filename[i]='\0';
+    	//printf("filename: %s\n", filename);
+    	fd=open(filename, O_RDWR | O_CREAT, 0666);
+    	//fp = fopen(filename,"a");
+  	}
+
+	write(sockcli, msg1, strlen(msg1));
+	int init=0;
+	while((retval= read(sockcli, buf, sizeof(buf)-1)) > 0)
+	{
+		if(buf[0]=='\r' || buf[0]=='\n') flag++;
+		else flag=0;
+		if(flag==4) 
+		{
+			init=1;
+			continue;
+		}
+
+		if(init==1)
+		{
+			buf[retval]='\0';
+			write(fd,buf,strlen(buf));
+			//fwrite(buf,1,sizeof(buf),fp);
+			printf("%s", buf);
+		}
+	}
+	
+	free(ip);
+	close(fd);
+	//fclose(fp);
+	close(sockcli);
+	return 0;
+}
